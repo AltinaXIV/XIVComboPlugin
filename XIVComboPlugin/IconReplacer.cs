@@ -1,13 +1,12 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using Dalamud.Game;
-using Dalamud.Game.ClientState;
 using Dalamud.Hooking;
 using XIVComboPlugin.JobActions;
 using Dalamud.Game.ClientState.JobGauge.Enums;
 using Dalamud.Game.ClientState.JobGauge.Types;
 using Dalamud.Logging;
-using Dalamud.Data;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 
 namespace XIVComboPlugin
@@ -20,7 +19,7 @@ namespace XIVComboPlugin
 
         private readonly IconReplacerAddressResolver Address;
         private readonly Hook<OnCheckIsIconReplaceableDelegate> checkerHook;
-        private readonly ClientState clientState;
+        private readonly IClientState clientState;
 
         private IntPtr comboTimer = IntPtr.Zero;
         private IntPtr lastComboMove = IntPtr.Zero;
@@ -28,10 +27,8 @@ namespace XIVComboPlugin
         private readonly XIVComboConfiguration Configuration;
 
         private readonly Hook<OnGetIconDelegate> iconHook;
-
-        private unsafe delegate int* getArray(long* address);
-
-        public IconReplacer(SigScanner scanner, ClientState clientState, DataManager manager, XIVComboConfiguration configuration)
+        
+        public IconReplacer(SigScanner scanner, IClientState clientState, XIVComboConfiguration configuration, IGameInteropProvider gameInteropProvider)
         {
 
             Configuration = configuration;
@@ -41,9 +38,13 @@ namespace XIVComboPlugin
             Address.Setup(scanner);
 
             if (!clientState.IsLoggedIn)
+            {
                 clientState.Login += SetupComboData;
+            }
             else
-                SetupComboData(null, null);
+            {
+                SetupComboData();
+            }
 
             PluginLog.Verbose("===== X I V C O M B O =====");
             PluginLog.Verbose("IsIconReplaceable address {IsIconReplaceable}", Address.IsIconReplaceable);
@@ -51,11 +52,11 @@ namespace XIVComboPlugin
             PluginLog.Verbose("ComboTimer address {ComboTimer}", comboTimer);
             PluginLog.Verbose("LastComboMove address {LastComboMove}", lastComboMove);
 
-            iconHook = Hook<OnGetIconDelegate>.FromAddress(Address.GetIcon, GetIconDetour);
-            checkerHook = Hook<OnCheckIsIconReplaceableDelegate>.FromAddress(Address.IsIconReplaceable, CheckIsIconReplaceableDetour);
+            iconHook = gameInteropProvider.HookFromAddress<OnGetIconDelegate>(Address.GetIcon, GetIconDetour);
+            checkerHook = gameInteropProvider.HookFromAddress<OnCheckIsIconReplaceableDelegate>(Address.IsIconReplaceable, CheckIsIconReplaceableDetour);
         }
 
-        public unsafe void SetupComboData(object sender, EventArgs args)
+        public unsafe void SetupComboData()
         {
             var actionmanager = (byte*)ActionManager.Instance();
             comboTimer = (IntPtr)(actionmanager + 0x60);
@@ -97,12 +98,12 @@ namespace XIVComboPlugin
             // Last resort. For some reason GetIcon fires after leaving the lobby but before ClientState.Login
             if (lastComboMove == IntPtr.Zero)
             {
-                SetupComboData(null, null);
+                SetupComboData();
                 return iconHook.Original(self, actionID);
             }
             if (comboTimer == IntPtr.Zero)
             {
-                SetupComboData(null, null);
+                SetupComboData();
                 return iconHook.Original(self, actionID);
             }
 

@@ -5,14 +5,11 @@ using System.Linq;
 using System.Numerics;
 using ImGuiNET;
 using Dalamud.Game;
-using Dalamud.Game.ClientState;
-using Dalamud.Game.ClientState.JobGauge;
-using Dalamud.Game.Gui;
 using Dalamud.IoC;
 using Dalamud.Utility;
-using Dalamud.Data;
-using Dalamud.Interface;
 using System.Diagnostics;
+using Dalamud.Plugin.Services;
+using Dalamud.Interface.Utility;
 
 namespace XIVComboPlugin
 {
@@ -24,15 +21,16 @@ namespace XIVComboPlugin
 
         private IconReplacer iconReplacer;
         private CustomComboPreset[] orderedByClassJob;
+        private SigScanner TargetModuleScanner = new SigScanner();
 
-        [PluginService] public static CommandManager CommandManager { get; private set; } = null!;
+        [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
         [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; } = null!;
-        [PluginService] public static SigScanner TargetModuleScanner { get; private set; } = null!;
-        [PluginService] public static ClientState ClientState { get; private set; } = null!;
-        [PluginService] public static ChatGui ChatGui { get; private set; } = null!;
-        [PluginService] public static JobGauges JobGauges { get; private set; } = null!;
+        [PluginService] public static IClientState ClientState { get; private set; } = null!;
+        [PluginService] public static IChatGui ChatGui { get; private set; } = null!;
+        [PluginService] public static IJobGauges JobGauges { get; private set; } = null!;
+        [PluginService] public static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
 
-        public XIVComboPlugin(DataManager manager)
+        public XIVComboPlugin(IDataManager manager)
         {
 
             CommandManager.AddHandler("/pcombo", new CommandInfo(OnCommandDebugCombo)
@@ -41,15 +39,15 @@ namespace XIVComboPlugin
                 ShowInHelp = true
             });
 
-            this.Configuration = PluginInterface.GetPluginConfig() as XIVComboConfiguration ?? new XIVComboConfiguration();
+            Configuration = PluginInterface.GetPluginConfig() as XIVComboConfiguration ?? new XIVComboConfiguration();
             if (Configuration.Version < 4)
             {
                 Configuration.Version = 4;
             }
 
-            this.iconReplacer = new IconReplacer(TargetModuleScanner, ClientState, manager, this.Configuration);
+            iconReplacer = new IconReplacer(TargetModuleScanner, ClientState, Configuration, GameInteropProvider);
 
-            this.iconReplacer.Enable();
+            iconReplacer.Enable();
 
             PluginInterface.UiBuilder.OpenConfigUi += () => isImguiComboSetupOpen = true;
             PluginInterface.UiBuilder.Draw += UiBuilder_OnBuildUi;
@@ -59,7 +57,7 @@ namespace XIVComboPlugin
             UpdateConfig();
         }
 
-        private bool isImguiComboSetupOpen = false;
+        private bool isImguiComboSetupOpen;
 
         private string ClassJobToName(byte key)
         {
